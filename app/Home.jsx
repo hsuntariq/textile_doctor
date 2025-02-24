@@ -20,16 +20,14 @@ const Home = ({ navigation }) => {
         >
           <View className="flex  flex-row gap-3 items-center justify-center">
             <Image
-              source={{
-                uri: "https://img.freepik.com/premium-vector/strands-fibre-weaved-together-clothing-fibres-various-colors-details-fabric-cloth-vector-template-logo-template_100655-2775.jpg?semt=ais_hybrid",
-              }}
-              className="w-[100px] h-[100px] rounded-xl"
+              source={require("../assets/images/logo.png")}
+              className=" rounded-xl"
               onError={(e) =>
                 console.log("Image Load Error:", e.nativeEvent.error)
               }
             />
 
-            <View className="">
+            {/* <View className="">
               <Text className="text-5xl flex font-bold text-white">
                 Textile
               </Text>
@@ -39,7 +37,7 @@ const Home = ({ navigation }) => {
                 </Text>
                 <Text className="text-2xl flex font-bold text-white">®</Text>
               </View>
-            </View>
+            </View> */}
           </View>
 
           <View className="my-20">
