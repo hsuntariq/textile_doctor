@@ -10,7 +10,7 @@ import {
 import { Link } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 
-const Home = ({ navigation }) => {
+const Home = () => {
   return (
     <>
       <SafeAreaView>
@@ -21,7 +21,7 @@ const Home = ({ navigation }) => {
           <View className="flex  flex-row gap-3 items-center justify-center">
             <Image
               source={require("../assets/images/logo.png")}
-              className=" rounded-xl"
+              className="w-[100%] h-[100px] rounded-xl"
               onError={(e) =>
                 console.log("Image Load Error:", e.nativeEvent.error)
               }

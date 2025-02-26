@@ -13,10 +13,11 @@ const SignUp = () => {
       <View className="flex  flex-row gap-3 items-center justify-start">
         <View className="">
           <Image
-            source={{
-              uri: "https://img.freepik.com/premium-vector/strands-fibre-weaved-together-clothing-fibres-various-colors-details-fabric-cloth-vector-template-logo-template_100655-2775.jpg?semt=ais_hybrid",
-            }}
-            className="w-[50px] h-[50px] rounded-xl"
+            source={require("../assets/images/logo.png")}
+            className="w-[100%] h-[100px] rounded-xl"
+            onError={(e) =>
+              console.log("Image Load Error:", e.nativeEvent.error)
+            }
           />
         </View>
         <View>
