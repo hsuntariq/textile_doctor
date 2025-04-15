@@ -1,10 +1,18 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { Text, View, StyleSheet, Dimensions, Image } from "react-native";
+import {
+  Text,
+  View,
+  StyleSheet,
+  Dimensions,
+  Image,
+  TouchableOpacity,
+} from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import Appointment from "./Appointments";
+import { useRouter } from "expo-router";
 const { width } = Dimensions.get("window");
 
 const Tab = createBottomTabNavigator();
@@ -22,6 +30,7 @@ const ContactScreen = () => (
 );
 
 const Departments = () => {
+  const router = useRouter();
   return (
     <View className="bg-white min-h-screen relative">
       <View style={styles.header}>
@@ -45,15 +54,17 @@ const Departments = () => {
       {/* departments */}
       <View className="flex flex-row flex-wrap gap-3">
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
-          <Image
-            source={{
-              uri: "https://cdn-icons-png.flaticon.com/256/3293/3293466.png",
-            }}
-            className="w-[100px] h-[100px] rounded-xl"
-          />
-          <Text className="text-primary font-semibold capitalize text-2xl">
-            Doctor
-          </Text>
+          <TouchableOpacity onPress={() => router.push("/camera")}>
+            <Image
+              source={{
+                uri: "https://cdn-icons-png.flaticon.com/256/3293/3293466.png",
+              }}
+              className="w-[100px] h-[100px] rounded-xl"
+            />
+            <Text className="text-primary text-center font-semibold capitalize text-2xl">
+              Doctor
+            </Text>
+          </TouchableOpacity>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
           <Image

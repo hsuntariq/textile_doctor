@@ -11,22 +11,12 @@ const SignUp = () => {
     <View className="min-h-screen px-5 py-5 bg-white">
       {/* Logo */}
       <View className="flex  flex-row gap-3 items-center justify-start">
-        <View className="">
-          <Image
-            source={require("../assets/images/logo.png")}
-            className="w-[100%] h-[100px] rounded-xl"
-            onError={(e) =>
-              console.log("Image Load Error:", e.nativeEvent.error)
-            }
-          />
-        </View>
-        <View>
-          <Text className="text-2xl font-bold text-[#1E71B7]">Textile</Text>
-          <View className="flex flex-row gap-2">
-            <Text className="text-2xl font-bold text-[#1E71B7]">Doctor</Text>
-            <Text className="text-1xl font-bold text-[#1E71B7]">®</Text>
-          </View>
-        </View>
+        <Image
+          source={{
+            uri: "https://res-console.cloudinary.com/djo5zsnlq/media_explorer_thumbnails/e7f925c39f7430d40be033e9a31477ea/detailed",
+          }}
+          style={{ width: 100, height: 100, borderRadius: 10 }}
+        />
       </View>
 
       {/* Form Container */}
