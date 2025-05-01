@@ -1,0 +1,95 @@
+const renderFormattedText = (text, sender) => {
+    const lines = text.split("\n");
+    // Determine text color based on sender
+    const baseColor = sender === "user" ? "#ffffff" : "#444";
+    const boldColor = sender === "user" ? "#ffffff" : "#111";
+    const headingColor = sender === "user" ? "#ffffff" : null;
+    const subheadingColor = sender === "user" ? "#ffffff" : "#c792ea";
+
+    return lines.map((line, index) => {
+      // ### Heading
+      if (line.startsWith("###")) {
+        return (
+          <Text
+            key={index}
+            style={{
+              fontSize: 22,
+              fontWeight: "bold",
+              fontStyle: "italic",
+              color: headingColor,
+              marginBottom: 6,
+            }}
+          >
+            {line.replace(/^###\s*/, "")}
+          </Text>
+        );
+      }
+
+      // #### Subheading (with big bullet)
+      if (line.startsWith("####")) {
+        return (
+          <Text
+            key={index}
+            style={{
+              fontSize: 18,
+              fontWeight: "600",
+              color: subheadingColor,
+              marginBottom: 6,
+            }}
+          >
+            {"🔹 " + line.replace(/^####\s*/, "")}
+          </Text>
+        );
+      }
+
+      // Bullet points
+      if (line.startsWith("-")) {
+        const bulletContent = line.replace(/^-+\s*/, "");
+        const boldSegments = bulletContent.split(/(\*\*[^*]+\*\*)/g);
+
+        return (
+          <Text
+            key={index}
+            style={{ fontSize: 16, color: baseColor, marginBottom: 4 }}
+          >
+            {"\u2022 "}
+            {boldSegments.map((part, i) => {
+              if (part.startsWith("**") && part.endsWith("**")) {
+                return (
+                  <Text
+                    key={i}
+                    style={{ fontWeight: "bold", color: boldColor }}
+                  >
+                    {part.slice(2, -2)}
+                  </Text>
+                );
+              } else {
+                return <Text key={i}>{part}</Text>;
+              }
+            })}
+          </Text>
+        );
+      }
+
+      // Normal line with bold inside
+      const boldSegments = line.split(/(\*\*[^*]+\*\*)/g);
+      return (
+        <Text
+          key={index}
+          style={{ fontSize: 16, color: baseColor, marginBottom: 4 }}
+        >
+          {boldSegments.map((part, i) => {
+            if (part.startsWith("**") && part.endsWith("**")) {
+              return (
+                <Text key={i} style={{ fontWeight: "bold", color: boldColor }}>
+                  {part.slice(2, -2)}
+                </Text>
+              );
+            } else {
+              return <Text key={i}>{part}</Text>;
+            }
+          })}
+        </Text>
+      );
+    });
+  };

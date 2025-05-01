@@ -67,14 +67,16 @@ const Departments = () => {
           </TouchableOpacity>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
-          <Image
-            source={{
-              uri: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQHgnOdie6fCLfjYg5-k7uh7N9mu8lEWiHI0A&s",
-            }}
-            className="w-[100px] h-[100px] rounded-xl"
-          />
-          <Text className="text-primary font-semibold capitalize text-2xl">
-            Textile clinics
+          <TouchableOpacity onPress={() => router.push("/chat")}>
+            <Image
+              source={{
+                uri: "https://cdn.shopify.com/app-store/listing_images/92d57e9e47200cac41dff5a47f51b5fc/icon/COqM7qSt2YoDEAE=.png",
+              }}
+              className="w-[100px] h-[100px] rounded-xl"
+            />
+          </TouchableOpacity>
+          <Text className="text-primary flex font-semibold capitalize text-2xl">
+            <Text className="uppercase">AI</Text> Chat
           </Text>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
@@ -89,26 +91,30 @@ const Departments = () => {
           </Text>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
-          <Image
-            source={{
-              uri: "https://wallpapers.com/images/hd/blue-checklist-vector-illustration-hlhxaknu987mtfky.png",
-            }}
-            className="w-[100px] h-[100px] rounded-xl"
-          />
+          <TouchableOpacity onPress={() => router.push("/vector-conversion")}>
+            <Image
+              source={{
+                uri: "https://wallpapers.com/images/hd/blue-checklist-vector-illustration-hlhxaknu987mtfky.png",
+              }}
+              className="w-[100px] h-[100px] rounded-xl"
+            />
+          </TouchableOpacity>
           <Text className="text-primary font-semibold capitalize text-2xl">
-            Appointments
+            Vector Conversion
           </Text>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
-          <Image
-            source={{
-              uri: "https://png.pngtree.com/png-clipart/20240804/original/pngtree-blue-camera-app-icon-for-instagram-vector-png-image_15703916.png",
-            }}
-            className="w-[100px] h-[100px] rounded-xl"
-          />
-          <Text className="text-primary font-semibold capitalize text-2xl">
-            Archive
-          </Text>
+          <TouchableOpacity onPress={() => router.push("/converter")}>
+            <Image
+              source={{
+                uri: "https://png.pngtree.com/png-clipart/20240804/original/pngtree-blue-camera-app-icon-for-instagram-vector-png-image_15703916.png",
+              }}
+              className="w-[100px] h-[100px] rounded-xl"
+            />
+            <Text className="text-primary font-semibold capitalize text-2xl">
+              Archive
+            </Text>
+          </TouchableOpacity>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
           <Image
