@@ -1,0 +1,682 @@
+import React, { useState, useRef } from "react";
+import {
+  View,
+  Button,
+  Text,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Dimensions,
+  TouchableOpacity,
+  Share,
+  TextInput,
+} from "react-native";
+import { Picker } from "@react-native-picker/picker";
+import * as ImagePicker from "expo-image-picker";
+import { WebView } from "react-native-webview";
+import * as FileSystem from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
+
+const { width: screenWidth } = Dimensions.get("window");
+
+export default function MeasureView() {
+  const webViewRef = useRef(null);
+  const [imageUri, setImageUri] = useState(null);
+  const [measurements, setMeasurements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [unit, setUnit] = useState("px");
+  const [refLength, setRefLength] = useState("1");
+  const [refUnit, setRefUnit] = useState("cm");
+  const [showRefInput, setShowRefInput] = useState(false);
+
+  const units = ["px", "cm", "in", "mm"];
+  const conversion = {
+    px: 1,
+    cm: 96 / 2.54, // 96px per inch, 2.54cm per inch
+    in: 96,
+    mm: 96 / 25.4,
+  };
+
+  const pickImage = async () => {
+    setLoading(true);
+    try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Camera roll access needed to select images"
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 1,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        setImageUri(base64);
+        setMeasurements([]);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to pick image");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+
+      if (data.type === "measurement") {
+        const convertedDistance = (data.distance / conversion[unit]).toFixed(2);
+        const newMeasurement = {
+          id: Date.now(),
+          distance: convertedDistance,
+          unit,
+          points: data.points,
+          type: "length",
+        };
+        setMeasurements((prev) => [...prev, newMeasurement]);
+      } else if (data.type === "angle") {
+        setMeasurements((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            angle: data.angle.toFixed(1),
+            points: data.points,
+            type: "angle",
+          },
+        ]);
+      } else if (data.type === "reference") {
+        const pxPerUnit = data.distance / parseFloat(refLength);
+        const newConversion = {};
+        units.forEach((u) => {
+          newConversion[u] = (pxPerUnit * conversion[u]) / conversion[refUnit];
+        });
+        Object.assign(conversion, newConversion);
+        Alert.alert(
+          "Reference Set",
+          `1 ${refUnit} = ${pxPerUnit.toFixed(2)}px`
+        );
+        setShowRefInput(false);
+      } else if (data.type === "error") {
+        Alert.alert("Measurement Error", data.message);
+      }
+    } catch (err) {
+      console.log("Message Error:", err);
+    }
+  };
+
+  const setReference = () => {
+    if (!showRefInput) {
+      setShowRefInput(true);
+      return;
+    }
+
+    if (!refLength || isNaN(parseFloat(refLength))) {
+      Alert.alert("Error", "Please enter a valid reference length");
+      return;
+    }
+
+    webViewRef.current.injectJavaScript(`
+      window.setReferenceMode(true);
+      true;
+    `);
+  };
+
+  const captureAndShare = async () => {
+    if (!imageUri) return;
+
+    setLoading(true);
+    try {
+      // First check media permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Please allow access to save images");
+        return;
+      }
+
+      // Capture the canvas
+      const result = await webViewRef.current.injectJavaScript(`
+        window.captureCanvas();
+        true;
+      `);
+
+      // Wait for the base64 response
+      const waitForImage = () =>
+        new Promise((resolve) => {
+          const listener = (event) => {
+            try {
+              const data = JSON.parse(event.nativeEvent.data);
+              if (data.type === "canvasImage") {
+                resolve(data.base64);
+                webViewRef.current.removeEventListener("message", listener);
+              }
+            } catch (e) {}
+          };
+          webViewRef.current.addEventListener("message", listener);
+        });
+
+      const base64Image = await waitForImage();
+      const uri = `${FileSystem.cacheDirectory}measurement_${Date.now()}.jpg`;
+      await FileSystem.writeAsStringAsync(uri, base64Image, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Save to media library
+      await MediaLibrary.saveToLibraryAsync(uri);
+
+      // Share the image
+      await Share.share({
+        url: uri,
+        title: "Measurement Results",
+        message: "Here are my measurement results:",
+      });
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Failed to export measurements");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { margin: 0; padding: 10px; background: #f0f0f0; }
+        #canvas-container { position: relative; }
+        canvas { max-width: 100%; display: block; background: white; touch-action: none; }
+        .measure-line { position: absolute; background: red; }
+        .measure-label { position: absolute; color: red; font: 14px Arial; user-select: none; }
+      </style>
+    </head>
+    <body>
+      <div id="canvas-container">
+        <canvas id="imageCanvas"></canvas>
+      </div>
+      
+      <script>
+        let canvas, ctx;
+        let currentPoints = [];
+        let isMeasuring = false;
+        let isReferenceMode = false;
+        let measurements = [];
+        let currentImage = null;
+        
+        function init() {
+          canvas = document.getElementById('imageCanvas');
+          ctx = canvas.getContext('2d');
+          
+          canvas.addEventListener('touchstart', handleStart);
+          canvas.addEventListener('touchmove', handleMove);
+          canvas.addEventListener('touchend', handleEnd);
+        }
+        
+        function handleStart(e) {
+          if (isMeasuring) return;
+          
+          const rect = canvas.getBoundingClientRect();
+          const x = e.touches[0].clientX - rect.left;
+          const y = e.touches[0].clientY - rect.top;
+          
+          currentPoints.push({x, y});
+          isMeasuring = true;
+          
+          if (currentPoints.length === 1) {
+            // First point - draw a dot
+            drawPoint(x, y);
+          }
+        }
+        
+        function handleMove(e) {
+          if (!isMeasuring || currentPoints.length === 0) return;
+          
+          const rect = canvas.getBoundingClientRect();
+          const x = e.touches[0].clientX - rect.left;
+          const y = e.touches[0].clientY - rect.top;
+          
+          // Clear previous temp drawing
+          redrawCanvas();
+          
+          // Draw all completed measurements
+          drawMeasurements();
+          
+          // Draw current measurement
+          if (currentPoints.length === 1) {
+            // Drawing line
+            ctx.beginPath();
+            ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Show distance
+            const dx = x - currentPoints[0].x;
+            const dy = y - currentPoints[0].y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const midX = (currentPoints[0].x + x) / 2;
+            const midY = (currentPoints[0].y + y) / 2;
+            
+            ctx.fillStyle = 'blue';
+            ctx.font = '14px Arial';
+            ctx.fillText(distance.toFixed(1) + 'px', midX + 5, midY - 5);
+          }
+          else if (currentPoints.length === 2) {
+            // Drawing angle
+            ctx.beginPath();
+            ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+            ctx.lineTo(currentPoints[1].x, currentPoints[1].y);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Calculate angle
+            const angle = calculateAngle(
+              currentPoints[0], currentPoints[1], {x, y}
+            );
+            
+            ctx.fillStyle = 'blue';
+            ctx.font = '14px Arial';
+            ctx.fillText(angle.toFixed(1) + '°', x + 10, y + 10);
+          }
+        }
+        
+        function handleEnd(e) {
+          if (!isMeasuring) return;
+          
+          const rect = canvas.getBoundingClientRect();
+          const x = e.changedTouches[0].clientX - rect.left;
+          const y = e.changedTouches[0].clientY - rect.top;
+          
+          if (currentPoints.length === 1) {
+            // Complete line measurement
+            currentPoints.push({x, y});
+            const dx = x - currentPoints[0].x;
+            const dy = y - currentPoints[0].y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (isReferenceMode) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: "reference",
+                distance: distance
+              }));
+              isReferenceMode = false;
+            } else {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: "measurement",
+                distance: distance,
+                points: currentPoints
+              }));
+              
+              measurements.push({
+                type: "length",
+                points: [...currentPoints],
+                distance: distance
+              });
+            }
+            
+            currentPoints = [];
+            isMeasuring = false;
+          }
+          else if (currentPoints.length === 2) {
+            // Complete angle measurement
+            currentPoints.push({x, y});
+            const angle = calculateAngle(
+              currentPoints[0], currentPoints[1], currentPoints[2]
+            );
+            
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: "angle",
+              angle: angle,
+              points: currentPoints
+            }));
+            
+            measurements.push({
+              type: "angle",
+              points: [...currentPoints],
+              angle: angle
+            });
+            
+            currentPoints = [];
+            isMeasuring = false;
+          }
+          
+          redrawCanvas();
+          drawMeasurements();
+        }
+        
+        function calculateAngle(p1, p2, p3) {
+          // Vector between p1 and p2
+          const v1 = { x: p1.x - p2.x, y: p1.y - p2.y };
+          // Vector between p3 and p2
+          const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+          
+          // Dot product
+          const dot = v1.x * v2.x + v1.y * v2.y;
+          // Magnitude
+          const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+          const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+          
+          // Angle in radians then convert to degrees
+          return Math.acos(dot / (mag1 * mag2)) * (180 / Math.PI);
+        }
+        
+        function drawPoint(x, y) {
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, 2 * Math.PI);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+        }
+        
+        function drawMeasurements() {
+          measurements.forEach(measure => {
+            if (measure.type === "length") {
+              // Draw line
+              ctx.beginPath();
+              ctx.moveTo(measure.points[0].x, measure.points[0].y);
+              ctx.lineTo(measure.points[1].x, measure.points[1].y);
+              ctx.strokeStyle = 'red';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              
+              // Draw distance
+              const midX = (measure.points[0].x + measure.points[1].x) / 2;
+              const midY = (measure.points[0].y + measure.points[1].y) / 2;
+              
+              ctx.fillStyle = 'red';
+              ctx.font = '14px Arial';
+              ctx.fillText(measure.distance.toFixed(1) + 'px', midX + 5, midY - 5);
+            }
+            else if (measure.type === "angle") {
+              // Draw angle lines
+              ctx.beginPath();
+              ctx.moveTo(measure.points[0].x, measure.points[0].y);
+              ctx.lineTo(measure.points[1].x, measure.points[1].y);
+              ctx.lineTo(measure.points[2].x, measure.points[2].y);
+              ctx.strokeStyle = 'red';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              
+              // Draw angle text
+              ctx.fillStyle = 'red';
+              ctx.font = '14px Arial';
+              ctx.fillText(measure.angle.toFixed(1) + '°', 
+                measure.points[2].x + 10, measure.points[2].y + 10);
+            }
+          });
+        }
+        
+        function redrawCanvas() {
+          // Clear canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          // Redraw image
+          if (currentImage) {
+            ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+          }
+        }
+        
+        window.loadImage = function(imageUri) {
+          const img = new Image();
+          img.onload = function() {
+            // Scale canvas to fit screen while maintaining aspect ratio
+            const scale = Math.min(1, ${screenWidth - 20} / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            currentImage = img;
+          };
+          img.src = imageUri;
+        };
+        
+        window.setReferenceMode = function(enabled) {
+          isReferenceMode = enabled;
+          if (enabled) {
+            measurements = [];
+            currentPoints = [];
+            redrawCanvas();
+          }
+        };
+        
+        window.captureCanvas = function() {
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          const base64 = dataUrl.split(',')[1];
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: "canvasImage",
+            base64: base64
+          }));
+        };
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', init);
+      </script>
+    </body>
+    </html>
+  `;
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.buttonRow}>
+        <Button title="Select Image" onPress={pickImage} color="#0066cc" />
+        <Button
+          title={showRefInput ? "Set Reference" : "Calibrate"}
+          onPress={setReference}
+          color="#ff9900"
+        />
+        <Button
+          title="Export"
+          onPress={captureAndShare}
+          color="#009933"
+          disabled={!imageUri}
+        />
+      </View>
+
+      {showRefInput && (
+        <View style={styles.referenceInput}>
+          <Text>Reference Length:</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={refLength}
+              onChangeText={setRefLength}
+              placeholder="Enter length"
+            />
+            <Picker
+              selectedValue={refUnit}
+              style={styles.unitPicker}
+              onValueChange={setRefUnit}
+              mode="dropdown"
+            >
+              {units.map((u) => (
+                <Picker.Item key={u} label={u} value={u} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+      )}
+
+      {loading && <ActivityIndicator size="large" style={styles.loader} />}
+
+      {imageUri && (
+        <WebView
+          ref={webViewRef}
+          originWhitelist={["*"]}
+          source={{ html: htmlContent }}
+          onMessage={handleMessage}
+          injectedJavaScript={`
+            window.loadImage("${imageUri}");
+            true;
+          `}
+          style={styles.webview}
+          javaScriptEnabled={true}
+          mixedContentMode="always"
+        />
+      )}
+
+      <View style={styles.measurementContainer}>
+        <Text style={styles.sectionTitle}>Measurements</Text>
+
+        <View style={styles.unitSelector}>
+          <Text>Unit:</Text>
+          <Picker
+            selectedValue={unit}
+            style={styles.unitPicker}
+            onValueChange={setUnit}
+            mode="dropdown"
+          >
+            {units.map((u) => (
+              <Picker.Item key={u} label={u} value={u} />
+            ))}
+          </Picker>
+        </View>
+
+        {measurements.map((m, i) => (
+          <View key={m.id} style={styles.measurementItem}>
+            {m.type === "length" && (
+              <Text style={styles.measurementText}>
+                📏 Length {i + 1}: {m.distance} {unit}
+              </Text>
+            )}
+            {m.type === "angle" && (
+              <Text style={styles.measurementText}>
+                📐 Angle {i + 1}: {m.angle}°
+              </Text>
+            )}
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() =>
+                setMeasurements((prev) => prev.filter((_, idx) => idx !== i))
+              }
+            >
+              <Text style={styles.deleteText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+
+        <Text style={styles.instructions}>
+          {!measurements.length ? "Select an image and draw to measure" : ""}
+          {measurements.length ? "Tap and drag to create:" : ""}
+        </Text>
+
+        <View style={styles.measurementTypes}>
+          <Text style={styles.typeItem}>• 1 tap + drag = Length</Text>
+          <Text style={styles.typeItem}>• 2 taps + drag = Angle</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 15,
+    backgroundColor: "#fff",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  webview: {
+    flex: 1,
+    marginBottom: 10,
+    backgroundColor: "#f0f0f0",
+    minHeight: 300,
+  },
+  measurementContainer: {
+    padding: 15,
+    backgroundColor: "#f8f8f8",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 10,
+    color: "#333",
+  },
+  measurementItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  measurementText: {
+    fontSize: 16,
+    color: "#0066cc",
+  },
+  deleteButton: {
+    padding: 5,
+  },
+  deleteText: {
+    color: "red",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  instructions: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 10,
+    fontStyle: "italic",
+  },
+  measurementTypes: {
+    marginTop: 10,
+  },
+  typeItem: {
+    fontSize: 14,
+    color: "#666",
+  },
+  loader: {
+    marginVertical: 20,
+  },
+  unitSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  unitPicker: {
+    height: 50,
+    width: 100,
+    marginLeft: 10,
+  },
+  referenceInput: {
+    padding: 10,
+    backgroundColor: "#fff8e6",
+    borderRadius: 5,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#ffecb3",
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 5,
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 4,
+    padding: 8,
+    marginRight: 10,
+  },
+});

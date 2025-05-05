@@ -117,12 +117,14 @@ const Departments = () => {
           </TouchableOpacity>
         </View>
         <View className="card w-[45%] rounded-xl mx-auto gap-3 p-10 flex items-center justify-center bg-white shadow-2xl">
-          <Image
-            source={{
-              uri: "https://cdn-icons-png.freepik.com/512/7960/7960288.png",
-            }}
-            className="w-[100px] h-[100px] rounded-xl"
-          />
+          <TouchableOpacity onPress={() => router.push("/measure-view")}>
+            <Image
+              source={{
+                uri: "https://cdn-icons-png.freepik.com/512/7960/7960288.png",
+              }}
+              className="w-[100px] h-[100px] rounded-xl"
+            />
+          </TouchableOpacity>
           <Text className="text-primary font-semibold capitalize text-2xl">
             Prescriptions
           </Text>

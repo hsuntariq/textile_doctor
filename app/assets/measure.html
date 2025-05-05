@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Measure</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <script>
+      window.loadImage = function (dataUrl) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          const canvas = document.getElementById("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const pixels = imageData.data;
+
+          for (let i = 0; i < pixels.length; i += 4) {
+            const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+            const edge = avg > 120 ? 255 : 0;
+            pixels[i] = pixels[i + 1] = pixels[i + 2] = edge;
+          }
+
+          ctx.putImageData(imageData, 0, 0);
+
+          const message = {
+            type: "edges",
+            width: canvas.width,
+            height: canvas.height,
+          };
+          window.ReactNativeWebView.postMessage(JSON.stringify(message));
+        };
+        img.src = dataUrl;
+      };
+    </script>
+  </body>
+</html>

@@ -1,546 +1,524 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  StyleSheet,
-  StatusBar,
   Image,
-  Alert,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  Platform,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
-import SvgUri from "react-native-svg-uri";
-import ViewShot from "react-native-view-shot";
-import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
+import { Picker } from "@react-native-picker/picker";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path } from "react-native-svg";
+const API_KEY =
+  "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";
+const { width } = Dimensions.get("window");
 
-const OPENAI_API_KEY = "sk-..."; // your OpenAI key
+const chatStylePrompt = `Only return a black line vector illustration of the requested clothing item. No colors, no shadows, no background, no shading—only simple clean outlines.`;
 
-export default function TextileDoctorChat() {
-  const [message, setMessage] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [chats, setChats] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [svgData, setSvgData] = useState("");
-  const [format, setFormat] = useState("png"); // Default format: png, svg, or jpg
-  const viewShotRef = useRef(null);
+const ImageGeneration = () => {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [format, setFormat] = useState("png");
+  const [chatHistory, setChatHistory] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarAnim = useRef(new Animated.Value(-250)).current;
+  const flatListRef = useRef(null);
 
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    loadChats();
-  }, []);
-
-  const loadChats = async () => {
-    try {
-      const data = await AsyncStorage.getItem("textileChats");
-      if (data) setChats(JSON.parse(data));
-    } catch (error) {
-      console.error("Failed to load chats:", error);
+    if (flatListRef.current && messages.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
-  };
+  }, [messages]);
 
-  const saveChats = async (newChats) => {
-    try {
-      await AsyncStorage.setItem("textileChats", JSON.stringify(newChats));
-    } catch (error) {
-      console.error("Failed to save chats:", error);
+  const toggleSidebar = () => {
+    if (sidebarOpen) {
+      Animated.timing(sidebarAnim, {
+        toValue: -250,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    } else {
+      Animated.timing(sidebarAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
     }
-  };
-
-  const sendMessage = async () => {
-    if (!message.trim()) return;
-
-    const userMessage = { text: message, isUser: true, timestamp: Date.now() };
-    const updatedChats = [...chats, userMessage];
-    setChats(updatedChats);
-    setMessage("");
-    setLoading(true);
-
-    try {
-      const systemPrompt =
-        "You are Textile Doctor, an AI assistant specializing in textile, fabric, clothing care, and fashion advice. Keep responses concise and helpful.";
-
-      const res = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: "gpt-4",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...updatedChats.map((chat) => ({
-              role: chat.isUser ? "user" : "assistant",
-              content: chat.text,
-            })),
-          ],
-          temperature: 0.7,
-          max_tokens: 500,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const botResponse = {
-        text: res.data.choices[0].message.content,
-        isUser: false,
-        timestamp: Date.now(),
-      };
-
-      const finalChats = [...updatedChats, botResponse];
-      setChats(finalChats);
-      await saveChats(finalChats);
-    } catch (error) {
-      console.error("Error getting response:", error);
-      // Add error message to chat
-      const errorMsg = {
-        text: "Sorry, I couldn't process your request. Please try again.",
-        isUser: false,
-        timestamp: Date.now(),
-      };
-      setChats([...updatedChats, errorMsg]);
-    } finally {
-      setLoading(false);
-    }
+    setSidebarOpen(!sidebarOpen);
   };
 
   const generateImage = async () => {
-    if (!prompt.trim()) {
-      Alert.alert("Error", "Please enter a prompt first");
-      return;
+    if (!input.trim()) return;
+    setIsLoading(true);
+
+    // Add user message first
+    const userMessage = { type: "user", content: input };
+    setMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const fullPrompt = `${chatStylePrompt} Subject: ${input}`;
+
+      const res = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "dall-e-3",
+          prompt: fullPrompt,
+          n: 1,
+          size: "1024x1024",
+          response_format: "url",
+        }),
+      });
+
+      const data = await res.json();
+      const imageUrl = data.data[0].url;
+      const aiMessage = { type: "ai", content: imageUrl, prompt: input };
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        { type: "error", content: "Failed to generate image" },
+      ]);
     }
 
-    setLoading(true);
+    setInput("");
+    setIsLoading(false);
+  };
+
+  const downloadImage = async (url, type) => {
     try {
-      const systemPrompt = `You are an SVG illustrator. Return ONLY a valid SVG string representing a clean vector outline illustration of: ${prompt}`;
+      setIsLoading(true);
+      let fileUri = FileSystem.documentDirectory + `image.${type}`;
 
-      const res = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: "gpt-4",
-          messages: [{ role: "system", content: systemPrompt }],
-          temperature: 0.4,
-          max_tokens: 1000,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      if (type === "svg") {
+        const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Placeholder for SVG content -->
+  <rect width="1024" height="1024" fill="none" stroke="black"/>
+  <text x="512" y="512" text-anchor="middle" fill="black">Vector Outline</text>
+</svg>`;
 
-      const rawSVG = res.data.choices[0].message.content;
-      setSvgData(rawSVG);
+        await FileSystem.writeAsStringAsync(fileUri, svgContent);
+      } else {
+        const { uri } = await FileSystem.downloadAsync(url, fileUri);
+        fileUri = uri;
+      }
 
-      // Create a chat message with the prompt and image info
-      const newChat = {
-        text: `Generated image for: "${prompt}"`,
-        isUser: false,
-        timestamp: Date.now(),
-        svg: rawSVG,
-      };
-
-      const updatedChats = [...chats, newChat];
-      setChats(updatedChats);
-      await saveChats(updatedChats);
-    } catch (err) {
-      Alert.alert("Error", err.message);
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (perm.granted) {
+        await MediaLibrary.saveToLibraryAsync(fileUri);
+        alert(`Image downloaded as ${type.toUpperCase()}!`);
+      }
+    } catch (e) {
+      console.error("Download failed:", e);
+      alert("Download failed. Please try again.");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const downloadImage = async () => {
-    if (!viewShotRef.current || !svgData) {
-      Alert.alert("Error", "No image to download");
-      return;
+  const startNewChat = () => {
+    if (messages.length > 0) {
+      setChatHistory((prev) => [...prev, { id: Date.now(), messages }]);
     }
+    setMessages([]);
+    setInput("");
+    if (sidebarOpen) toggleSidebar();
+  };
 
-    try {
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert("Permission denied to save image");
-        return;
-      }
+  const loadChat = (chat) => {
+    setMessages(chat.messages);
+    if (sidebarOpen) toggleSidebar();
+  };
 
-      if (format === "svg") {
-        // Save raw SVG as file
-        const fileUri =
-          FileSystem.documentDirectory +
-          `textile_${prompt.replace(/\s+/g, "_")}.svg`;
-
-        await FileSystem.writeAsStringAsync(fileUri, svgData, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
-        await MediaLibrary.saveToLibraryAsync(fileUri);
-      } else {
-        // Capture screenshot for PNG or JPG
-        const uri = await viewShotRef.current.capture({
-          format: format === "jpg" ? "jpg" : "png",
-          quality: 0.9,
-        });
-        await MediaLibrary.saveToLibraryAsync(uri);
-      }
-
-      Alert.alert("Success", `Image saved in ${format.toUpperCase()} format`);
-    } catch (error) {
-      Alert.alert("Error", `Failed to save image: ${error.message}`);
+  const renderMessage = ({ item, index }) => {
+    if (item.type === "user") {
+      return (
+        <View style={styles.userMessageContainer}>
+          <View style={styles.userMessageBubble}>
+            <Text style={styles.userMessageText}>{item.content}</Text>
+          </View>
+        </View>
+      );
+    } else if (item.type === "ai") {
+      return (
+        <View style={styles.aiMessageContainer}>
+          <View style={styles.aiMessageBubble}>
+            <Image
+              source={{ uri: item.content }}
+              style={styles.generatedImage}
+              resizeMode="contain"
+            />
+            <View style={styles.downloadControls}>
+              <Picker
+                selectedValue={format}
+                onValueChange={(itemValue) => setFormat(itemValue)}
+                style={styles.formatPicker}
+                dropdownIconColor="#fff"
+              >
+                <Picker.Item label="PNG" value="png" />
+                <Picker.Item label="JPEG" value="jpg" />
+                <Picker.Item label="SVG" value="svg" />
+              </Picker>
+              <TouchableOpacity
+                onPress={() => downloadImage(item.content, format)}
+                style={styles.downloadButton}
+              >
+                <Feather name="download" size={20} color="white" />
+                <Text style={styles.downloadButtonText}>İndirmek</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      );
+    } else if (item.type === "error") {
+      return (
+        <View style={styles.errorMessageContainer}>
+          <Text style={styles.errorMessageText}>{item.content}</Text>
+        </View>
+      );
     }
+    return null;
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-
-      {/* Header with gradient */}
+    <View style={styles.container}>
       <View style={styles.header}>
-        <LinearGradient colors={["#4839C8", "#5E7CE2"]} style={styles.gradient}>
-          {/* Hamburger menu */}
-          <TouchableOpacity style={styles.menuButton}>
-            <View style={styles.menuLine}></View>
-            <View style={styles.menuLine}></View>
-            <View style={styles.menuLine}></View>
-          </TouchableOpacity>
-
-          <Text style={styles.headerText}>Textile Doctor AI Chat</Text>
-
-          {/* Wave shape at bottom of header */}
-          <View style={styles.headerWave}>
-            <Image
-              source={{ uri: "https://reactnative.dev/img/header_logo.svg" }} // Replace with actual wave SVG
-              style={{ width: "100%", height: 30 }}
-              resizeMode="stretch"
-            />
-          </View>
+        <LinearGradient colors={["#4839C8", "#2BB6E3"]} style={styles.gradient}>
+          <Text className="text-white text-4xl">Vektör Üretimi</Text>
         </LinearGradient>
-      </View>
-
-      {/* Chat area */}
-      <ScrollView
-        style={styles.chatArea}
-        contentContainerStyle={styles.chatContent}
-      >
-        {/* Image Generation Section */}
-        <View style={styles.imageGenSection}>
-          <Text style={styles.sectionTitle}>🎨 Generate Textile Image</Text>
-          <TextInput
-            placeholder="e.g., Vector image of a t-shirt pattern"
-            value={prompt}
-            onChangeText={setPrompt}
-            style={styles.promptInput}
-            multiline
+        {/* Curved Bottom Shape */}
+        <Svg
+          height="50"
+          width={width}
+          viewBox={`0 0 ${width} 50`}
+          style={styles.svgCurve}
+        >
+          <Path
+            fill="white"
+            d={`M0,0 Q${width / 2},50 ${width},0 L${width},50 L0,50 Z`}
           />
+        </Svg>
+      </View>
+      {/* Sidebar Overlay */}
+      {sidebarOpen && (
+        <TouchableOpacity
+          style={styles.overlay}
+          onPress={toggleSidebar}
+          activeOpacity={1}
+        />
+      )}
 
-          <TouchableOpacity
-            style={styles.generateBtn}
-            onPress={generateImage}
-            disabled={loading}
-          >
-            <Text style={styles.generateBtnText}>Generate Image</Text>
+      {/* Sidebar */}
+      <Animated.View
+        style={[
+          styles.sidebar,
+          {
+            transform: [{ translateX: sidebarAnim }],
+          },
+        ]}
+      >
+        <TouchableOpacity onPress={startNewChat} style={styles.newChatButton}>
+          <Ionicons name="add" size={24} color="white" />
+          <Text style={styles.newChatButtonText}>New Chat</Text>
+        </TouchableOpacity>
+
+        <FlatList
+          data={chatHistory}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item, index }) => (
+            <TouchableOpacity
+              onPress={() => loadChat(item)}
+              style={styles.chatHistoryItem}
+            >
+              <MaterialIcons name="chat-bubble" size={16} color="#666" />
+              <Text style={styles.chatHistoryText} numberOfLines={1}>
+                Chat {index + 1} - {item.messages.length} items
+              </Text>
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.chatHistoryList}
+        />
+      </Animated.View>
+
+      {/* Main Content */}
+      <View style={styles.mainContent}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={toggleSidebar} style={styles.menuButton}>
+            <Ionicons name="menu" size={28} color="#333" />
           </TouchableOpacity>
-
-          {/* Format Selection */}
-          <View style={styles.formatContainer}>
-            <Text style={styles.formatLabel}>Export Format:</Text>
-            <View style={styles.formatOptions}>
-              {["svg", "png", "jpg"].map((opt) => (
-                <TouchableOpacity
-                  key={opt}
-                  style={[
-                    styles.formatBtn,
-                    format === opt && styles.formatBtnSelected,
-                  ]}
-                  onPress={() => setFormat(opt)}
-                >
-                  <Text
-                    style={{
-                      color: format === opt ? "#fff" : "#333",
-                      fontWeight: format === opt ? "bold" : "normal",
-                    }}
-                  >
-                    {opt.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Image Preview */}
-          {svgData ? (
-            <View style={styles.imagePreview}>
-              <Text style={styles.previewLabel}>Image Preview:</Text>
-              <ViewShot
-                ref={viewShotRef}
-                options={{
-                  format: format === "jpg" ? "jpg" : "png",
-                  quality: 0.9,
-                }}
-                style={styles.imageContainer}
-              >
-                <SvgUri width="100%" height={250} svgXmlData={svgData} />
-              </ViewShot>
-
-              <TouchableOpacity
-                style={styles.downloadBtn}
-                onPress={downloadImage}
-              >
-                <Text style={styles.downloadBtnText}>
-                  Download as {format.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          <Text style={styles.headerTitle}>Vector Outline Generator</Text>
+          <View style={styles.headerRight} />
         </View>
 
-        <View style={styles.divider} />
-
-        {/* Chat Messages */}
-        <Text style={styles.sectionTitle}>💬 Chat History</Text>
-        {chats.map((chat, index) => (
-          <View
-            key={index}
-            style={[
-              styles.messageContainer,
-              chat.isUser ? styles.userMessage : styles.botMessage,
-            ]}
-          >
-            <Text style={{ color: chat.isUser ? "#fff" : "#333" }}>
-              {chat.text}
-            </Text>
-            {chat.svg && (
-              <View style={styles.messageSvg}>
-                <SvgUri width="100%" height={150} svgXmlData={chat.svg} />
-              </View>
-            )}
-          </View>
-        ))}
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <Text>Textile Doctor is thinking...</Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Message input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type your message..."
-          value={message}
-          onChangeText={setMessage}
-          multiline
-          placeholderTextColor="#999"
+        {/* Messages */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item, index) => index.toString()}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.messagesContainer}
+          style={styles.messagesList}
         />
-        <TouchableOpacity
-          style={styles.sendBtn}
-          onPress={sendMessage}
-          disabled={loading}
-        >
-          <Text style={{ color: "white", fontSize: 20 }}>▶</Text>
-        </TouchableOpacity>
+
+        {/* Input Area */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="üretmek için bir giyim eşyasını tanımlayın..."
+            placeholderTextColor="#999"
+            style={styles.input}
+            multiline
+            onSubmitEditing={generateImage}
+          />
+          <TouchableOpacity
+            onPress={generateImage}
+            style={styles.sendButton}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Ionicons name="send" size={24} color="white" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    zIndex: 1,
+  },
+  sidebar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 250,
     backgroundColor: "#fff",
+    borderRightWidth: 1,
+    borderRightColor: "#eee",
+    zIndex: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  newChatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4839C8",
+    padding: 15,
+    borderRadius: 8,
+    margin: 15,
+    marginBottom: 10,
+  },
+  newChatButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "500",
+    marginLeft: 10,
+  },
+  chatHistoryList: {
+    paddingBottom: 20,
+  },
+  chatHistoryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  chatHistoryText: {
+    marginLeft: 10,
+    color: "#333",
+    fontSize: 14,
+    flex: 1,
+  },
+  mainContent: {
+    flex: 1,
   },
   header: {
-    height: 140,
-    width: "100%",
-  },
-  gradient: {
-    height: "100%",
-    width: "100%",
-    justifyContent: "center",
+    flexDirection: "row",
     alignItems: "center",
-    position: "relative",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
   },
   menuButton: {
-    position: "absolute",
-    left: 20,
-    top: 40,
-    width: 30,
-    height: 25,
-    justifyContent: "space-between",
+    marginRight: 15,
   },
-  menuLine: {
-    width: 30,
-    height: 3,
-    backgroundColor: "#fff",
-    borderRadius: 3,
-  },
-  headerText: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold",
-    marginTop: 10,
-  },
-  headerWave: {
-    position: "absolute",
-    bottom: -1,
-    width: "100%",
-    height: 30,
-  },
-  chatArea: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  chatContent: {
-    padding: 15,
-    paddingBottom: 30,
-  },
-  // Image Generation Styles
-  imageGenSection: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-    elevation: 2,
-  },
-  sectionTitle: {
+  headerTitle: {
     fontSize: 18,
-    fontWeight: "bold",
-    color: "#4839C8",
-    marginBottom: 12,
+    fontWeight: "600",
+    color: "#333",
+    flex: 1,
   },
-  promptInput: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    padding: 12,
+  headerRight: {
+    width: 28,
+  },
+  messagesContainer: {
+    padding: 15,
+    paddingBottom: 80,
+  },
+  messagesList: {
+    flex: 1,
+  },
+  userMessageContainer: {
     marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
+    alignItems: "flex-end",
   },
-  generateBtn: {
+  userMessageBubble: {
     backgroundColor: "#4839C8",
-    borderRadius: 10,
-    padding: 12,
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  generateBtnText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  formatContainer: {
-    marginVertical: 10,
-  },
-  formatLabel: {
-    fontSize: 14,
-    marginBottom: 8,
-    color: "#666",
-  },
-  formatOptions: {
-    flexDirection: "row",
-  },
-  formatBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    marginRight: 10,
-    backgroundColor: "#e0e0e0",
-  },
-  formatBtnSelected: {
-    backgroundColor: "#5E7CE2",
-  },
-  imagePreview: {
-    marginTop: 15,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 10,
-    backgroundColor: "#f9f9f9",
-  },
-  previewLabel: {
-    fontSize: 14,
-    marginBottom: 10,
-    color: "#666",
-  },
-  imageContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 15,
-  },
-  downloadBtn: {
-    backgroundColor: "#5E7CE2",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-  downloadBtnText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#e0e0e0",
-    marginVertical: 15,
-  },
-  // Chat Message Styles
-  messageContainer: {
     padding: 12,
     borderRadius: 18,
-    maxWidth: "85%",
-    marginBottom: 12,
-    elevation: 1,
+    borderBottomRightRadius: 4,
+    maxWidth: "80%",
   },
-  userMessage: {
-    backgroundColor: "#5E7CE2",
-    alignSelf: "flex-end",
-    borderBottomRightRadius: 5,
+  userMessageText: {
+    color: "white",
+    fontSize: 16,
   },
-  botMessage: {
+  aiMessageContainer: {
+    marginBottom: 25,
+    alignItems: "flex-start",
+  },
+  aiMessageBubble: {
     backgroundColor: "#fff",
-    alignSelf: "flex-start",
-    borderBottomLeftRadius: 5,
+    padding: 12,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    maxWidth: "90%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  messageSvg: {
+  generatedImage: {
+    width: 300,
+    height: 300,
+    borderRadius: 12,
+    backgroundColor: "#f9f9f9",
+  },
+  downloadControls: {
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 10,
-    padding: 5,
-    backgroundColor: "#fff",
+  },
+  formatPicker: {
+    height: 40,
+    width: 120,
+    backgroundColor: "#4839C8",
+    color: "white",
     borderRadius: 8,
+    overflow: "hidden",
+  },
+  downloadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4839C8",
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  downloadButtonText: {
+    color: "white",
+    marginLeft: 5,
+    fontSize: 14,
+  },
+  errorMessageContainer: {
+    alignSelf: "center",
+    backgroundColor: "#ffebee",
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 10,
+  },
+  errorMessageText: {
+    color: "#c62828",
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
+    paddingBottom: Platform.OS === "ios" ? 30 : 10,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#eee",
   },
   input: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
-    borderRadius: 24,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    marginRight: 10,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 20,
+    padding: 12,
+    paddingTop: 12,
+    maxHeight: 120,
     fontSize: 16,
+    color: "#333",
   },
-  sendBtn: {
+  sendButton: {
     backgroundColor: "#4839C8",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+  },
+  header: {
+    backgroundColor: "transparent",
+  },
+  gradient: {
+    width: "100%",
+    height: 150, // Adjust as needed
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingContainer: {
-    padding: 10,
-    alignSelf: "flex-start",
+  title: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+    textTransform: "uppercase",
+  },
+  svgCurve: {
+    position: "absolute",
+    bottom: 0,
   },
 });
+
+export default ImageGeneration;
